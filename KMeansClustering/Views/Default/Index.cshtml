@@ -1,0 +1,185 @@
+﻿@{
+    Layout = null;
+}
+
+<!DOCTYPE html>
+
+<html>
+<head>
+    <meta name="viewport" content="width=device-width" />
+    <title>Default</title>
+    <script>
+
+        function processFiles(files) {
+            var file = files[0];
+
+            var reader = new FileReader();
+            reader.onload = function (event) {
+                var image = new Image();
+                image.src = event.target.result;
+                image.width = 400; // a fake resize
+                var dragDest = document.getElementById("DragDestination");
+                dragDest.innerHTML = "";
+                dragDest.appendChild(image);
+
+                dragDest.style.width = image.offsetWidth + "px";
+                dragDest.style.height = image.offsetHeight + "px";
+            };
+
+            reader.readAsDataURL(file);
+        }
+
+        function dragOver(evt) {
+            evt.preventDefault();
+            return false;
+        }
+
+        function drop(evt) {
+            console.log("dropped");
+            evt.preventDefault();
+            processFiles(evt.dataTransfer.files);
+        }
+
+        //return ImageData object
+        //ImageData.data = giant Uint8ClampedArray, rgba order, 0 to 255 for each value
+        function getImageData(){
+            ourImage = document.querySelector("#DragDestination img");
+            if (ourImage) {
+                var canvas = document.createElement("canvas");
+                canvas.width = ourImage.naturalWidth;
+                canvas.height = ourImage.naturalHeight;
+                var ctx = canvas.getContext("2d");
+                ctx.drawImage(ourImage, 0, 0);
+                return ctx.getImageData(0, 0, ctx.canvas.width, ctx.canvas.height);
+            }
+            return null;
+        }
+
+        function runKMeans() {
+
+            var numClusters = parseInt(document.getElementById("TxtNumClusters").value);
+            if (isNaN(numClusters)) {
+                alert("Num clusters gotta be a number fool!!!");
+            }
+
+            var numIterations = parseInt(document.getElementById("TxtNumIterations").value);
+            if (isNaN(numIterations)) {
+                alert("Num iterations gotta be a number fool!!!");
+            }
+
+            var imageData = getImageData();
+            if (imageData == null) {
+                alert("AINT NO IMAGE FOOL!");
+                return;
+            }
+
+           
+            
+            var newCtx = document.createElement("canvas").getContext("2d"); //document.getElementById("CanvasOutput").getContext("2d");
+            newCtx.canvas.width = imageData.width;
+            newCtx.canvas.height = imageData.height;
+            var newImageData = newCtx.createImageData(imageData);
+
+            //seed the centroids
+            var centroids = [];
+            
+            for (var i = 0; i < numClusters; i++) {
+                var randomColor = [Math.random() * 255, Math.random() * 255, Math.random() * 255];
+                centroids.push(randomColor);
+            }
+
+            var nPixels = imageData.width * imageData.height;
+            var assignments = new Uint8Array(nPixels);
+            
+
+            //run the algorithm...
+            for (var nIteration = 0; nIteration < numIterations; nIteration++) {
+                //1. compute associated centroids for each data point
+                for (var i = 0; i < assignments.length; i++) {
+                    var red = imageData.data[4 * i];
+                    var green = imageData.data[4 * i + 1];
+                    var blue = imageData.data[4 * i + 2];
+
+                    var bestDistance = Infinity;
+                    var bestCentroid = -1;
+                    for (var j = 0; j < centroids.length; j++) {
+                        var rDist = centroids[j][0] - red;
+                        var gDist = centroids[j][1] - blue;
+                        var bDist = centroids[j][2] - green;
+                        var squaredDist = rDist * rDist + gDist * gDist + bDist * bDist;
+                        if (squaredDist < bestDistance) {
+                            bestDistance = squaredDist;
+                            bestCentroid = j;
+                        }
+                    }
+
+                    assignments[i] = bestCentroid;
+                }
+
+                var assignmentsPerCentroid = [];
+                for (var i = 0; i < centroids.length; i++) {
+                    centroids[i][0] = centroids[i][1] = centroids[i][2] = 0;
+                    assignmentsPerCentroid[i] = 0;
+                }
+
+                
+
+                //2. update centroid centers
+                for (var i = 0; i < assignments.length; i++) {
+                    var centroid = assignments[i];
+                    assignmentsPerCentroid[centroid]++;
+                    centroids[centroid][0] += imageData.data[i * 4];
+                    centroids[centroid][1] += imageData.data[i * 4 + 1];
+                    centroids[centroid][2] += imageData.data[i * 4 + 2];
+                }
+
+                for (var i = 0; i < centroids.length; i++) {
+                    centroids[i][0] /= assignmentsPerCentroid[i];
+                    centroids[i][1] /= assignmentsPerCentroid[i];
+                    centroids[i][2] /= assignmentsPerCentroid[i];
+                }
+            }
+
+            //finally assign the new image data
+            for (var i = 0; i < assignments.length; i++) {
+                var centroid = assignments[i];
+                newImageData.data[i * 4] = centroids[centroid][0];
+                newImageData.data[i * 4 + 1] = centroids[centroid][1];
+                newImageData.data[i * 4 + 2] = centroids[centroid][2];
+                newImageData.data[i * 4 + 3] = 255;
+            }
+
+            window.imData = newImageData;
+            newCtx.putImageData(newImageData, 0, 0);
+            
+            //blah = centroids;
+
+            var canvas = document.getElementById("CanvasOutput");
+
+            var origImg = document.querySelector("#DragDestination img");
+            canvas.style.width = origImg.offsetWidth + "px";
+            canvas.style.height = origImg.offsetHeight + "px";
+
+            var ctxOutput = canvas.getContext("2d");
+            
+            //x,y,w,h of source then dest
+            ctxOutput.drawImage(newCtx.canvas, 0, 0, newImageData.width, newImageData.height, 0, 0, canvas.width, canvas.height);
+            
+        }
+    </script>
+</head>
+<body>
+    <div id="DragDestination" style="width:250px; height:250px; border:1px solid green;" ondragover="dragOver(event)" ondrop="drop(event)">
+        
+    </div>
+    <div>
+        <label for="TxtNumClusters">Number of Clusters:</label>
+        <input type="text" id="TxtNumClusters" value="3" />
+        <label for="TxtNumClusters">Number of Iterations:</label>
+        <input type="text" id="TxtNumIterations" value="100" />
+        <input type="button" id="BtnRunKMeans" value="Run K Means" onclick="runKMeans()" />
+    </div>
+
+    <canvas id="CanvasOutput" style="border:1px solid red; width:500px; height:500px" ></canvas>
+</body>
+</html>
